@@ -92,16 +92,16 @@ WHERE seq = 1
 
 ,FirstContactLeadsReq AS (
   SELECT LeadId as LeadRequestId,
-    CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS datetime) AS CreatedDateTime_AEST,
-    CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS date) AS CreatedDate_AEST
+    CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS datetime) AS ContactDateTime_AEST,
+    CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS date) AS ContactDate_AEST
   FROM [careabout-db].dbo.LeadHistory
   WHERE Field = 'Status' AND NewValue = 'Contacted x1' 
   
 UNION ALL
 
   SELECT ParentId as LeadRequestId,
-    CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS datetime) AS CreatedDateTime_AEST,
-    CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS date) AS CreatedDate_AEST
+    CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS datetime) AS ContactDateTime_AEST,
+    CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS date) AS ContactDate_AEST
   FROM [careabout-db].dbo.RequestHistory
   WHERE Field = 'Request_Status__c' AND NewValue IN ('Closed - Actioned') 
 )
@@ -109,17 +109,19 @@ UNION ALL
 
 SELECT 
   lr.*,
-  lh.CreatedDate_AEST AS FirstContactDate,
-  lh.CreatedDateTime_AEST,
+  lh.ContactDate_AEST AS FirstContactDate,
+  lh.ContactDateTime_AEST,
   CASE
-        WHEN CONVERT(VARCHAR(8), lh.CreatedDateTime_AEST, 108) BETWEEN '09:00:00' AND '19:00:00'
+        WHEN CONVERT(VARCHAR(8), lh.ContactDateTime_AEST, 108) BETWEEN '09:00:00' AND '19:00:00'
             THEN 1
         ELSE 0
-    END AS ContactedWithinDay
+    END AS ContactedWithinDay,
+     DATEDIFF(MINUTE, CreatedDateTimeLeadReq_lr, ContactDateTime_AEST) AS MinutesDifference,
+     FORMAT(CreatedDateTimeLeadReq_lr, 'dddd') AS DayName
 FROM LeadRequestMod_dedupe lr
 LEFT JOIN FirstContactLeadsReq lh
   ON lr.LeadReqId_lr = lh.LeadRequestId AND
-  lr.CreatedDateOnly = lh.CreatedDate_AEST
+  lr.CreatedDateOnly = lh.ContactDate_AEST
   GROUP BY 
   lr.Object_lr,
   lr.LeadReqId_lr,
@@ -152,6 +154,6 @@ LEFT JOIN FirstContactLeadsReq lh
   lr.ClickSource_lr,
   lr.AllTrafficSources_lr,
   lr.Coverage_lr,
-  lh.CreatedDate_AEST,
-  lh.CreatedDateTime_AEST,
+  lh.ContactDate_AEST,
+  lh.ContactDateTime_AEST,
   lr.WithinTimeWindow
