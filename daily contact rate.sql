@@ -3,7 +3,7 @@ WITH LeadRequestMod AS (
     Object_lr,
     LeadReqId_lr,
     CreatedDateTimeLeadReq_lr,
-    CAST(CreatedDateTimeLeadReq_lr AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS datetime) AS CreatedDateTime_AEST,
+    --CAST(CreatedDateTimeLeadReq_lr AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS datetime) AS CreatedDateTime_AEST,
     CAST(CreatedDateTimeLeadReq_lr AS date) AS CreatedDateOnly,
     FullName_lr,
     FirstName_lr,
@@ -40,12 +40,13 @@ WITH LeadRequestMod AS (
     ROW_NUMBER() OVER (PARTITION BY CompanyName_lr  ORDER BY CreatedDateTimeLeadReq_lr desc) AS seq
   FROM [careabout-db].dbo.ViewLeadRequestMod
   WHERE   CreatedDateTimeLeadReq_lr BETWEEN 
-  DATEADD(HOUR, -10, '2025-05-07 00:00:00.000') 
+  '2025-05-08 00:00:00.000'
   AND 
-  DATEADD(HOUR, -10, '2025-05-07 23:59:59.000')
+ '2025-05-08 23:59:59.000'
     AND HcAssessmentStage_lr IN ('Newly Funded','Switching','Newly Funded - Scheduled')
     AND Coverage_lr = 'Coverage'
     AND Status_lr NOT IN ('Duplicate', 'Invalid details')
+    AND HcpLevel_lr != 'CHSP'
     AND (CampaignName_lr = 'Homecare All' OR CampaignName_lr IS NULL)   
 )
 
