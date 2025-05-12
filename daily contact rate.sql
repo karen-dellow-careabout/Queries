@@ -1,3 +1,6 @@
+
+--ALTER VIEW vw_ContactRateAnalysis AS
+
 WITH LeadRequestMod AS (
   SELECT 
     Object_lr,
@@ -5,6 +8,14 @@ WITH LeadRequestMod AS (
     CreatedDateTimeLeadReq_lr,
     --CAST(CreatedDateTimeLeadReq_lr AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS datetime) AS CreatedDateTime_AEST,
     CAST(CreatedDateTimeLeadReq_lr AS date) AS CreatedDateOnly,
+      CASE
+    WHEN CAST(CreatedDateTimeLeadReq_lr AS date) = CAST(DATEADD(DAY, -1, GETDATE()) AS date) THEN 1
+     ELSE 0
+END AS YesterdaysContacts,
+    CASE
+	    WHEN CAST(CreatedDateTimeLeadReq_lr AS date) >= CAST(DATEADD(DAY, 1 - DAY(GETDATE()), GETDATE()) AS date) THEN 1
+    ELSE 0
+END AS MTDContacts,
     FullName_lr,
     FirstName_lr,
     LastName_lr,
@@ -39,17 +50,16 @@ WITH LeadRequestMod AS (
     END AS WithinTimeWindow,
     ROW_NUMBER() OVER (PARTITION BY CompanyName_lr  ORDER BY CreatedDateTimeLeadReq_lr desc) AS seq
   FROM [careabout-db].dbo.ViewLeadRequestMod
-  WHERE   CreatedDateTimeLeadReq_lr BETWEEN 
-  '2025-05-08 00:00:00.000'
-  AND 
- '2025-05-08 23:59:59.000'
+  WHERE CreatedDateTimeLeadReq_lr BETWEEN '2025-05-12 00:00:00.000' AND '2025-05-12 23:59:59.000'
     AND HcAssessmentStage_lr IN ('Newly Funded','Switching','Newly Funded - Scheduled')
     AND Coverage_lr = 'Coverage'
     AND Status_lr NOT IN ('Duplicate', 'Invalid details')
-    AND HcpLevel_lr != 'CHSP'
-    AND (CampaignName_lr = 'Homecare All' OR CampaignName_lr IS NULL)   
+    AND (HcpLevel_lr != 'CHSP' or HcpLevel_lr is NULL)
+    AND CampaignName_lr = 'Homecare All'
+    --AND CampaignName_lr != 'Hospital GP' 
+    AND (LastName_lr not like 'Test' )
+  
 )
-
 
 ,LeadRequestMod_dedupe as (
 select
@@ -57,6 +67,8 @@ select
     LeadReqId_lr,
     CreatedDateTimeLeadReq_lr,
     CreatedDateOnly,
+    YesterdaysContacts,
+    MTDContacts,
     FullName_lr,
     FirstName_lr,
     LastName_lr,
@@ -93,17 +105,33 @@ WHERE seq = 1
 ,FirstContactLeadsReq AS (
   SELECT LeadId as LeadRequestId,
     CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS datetime) AS ContactDateTime_AEST,
-    CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS date) AS ContactDate_AEST
+    CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS date) AS ContactDate_AEST,
+    NewValue,
+   ROW_NUMBER() OVER (PARTITION BY LeadId,CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS date)  ORDER BY CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS date) asc) AS seq
   FROM [careabout-db].dbo.LeadHistory
-  WHERE Field = 'Status' AND NewValue = 'Contacted x1' 
+  WHERE Field = 'Status' AND NewValue in ('Contacted x1')
+  
   
 UNION ALL
 
   SELECT ParentId as LeadRequestId,
     CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS datetime) AS ContactDateTime_AEST,
-    CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS date) AS ContactDate_AEST
+    CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS date) AS ContactDate_AEST,
+    NewValue,
+    ROW_NUMBER() OVER (PARTITION BY ParentId, CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS date)  ORDER BY CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS date) asc) AS seq
   FROM [careabout-db].dbo.RequestHistory
   WHERE Field = 'Request_Status__c' AND NewValue IN ('Closed - Actioned') 
+)
+
+,FirstContactLeadsReq_dedupe as (
+select
+LeadRequestId,
+ContactDateTime_AEST,
+ContactDate_AEST,
+NewValue
+from 
+FirstContactLeadsReq
+where seq =1
 )
 
 
@@ -111,15 +139,21 @@ SELECT
   lr.*,
   lh.ContactDate_AEST AS FirstContactDate,
   lh.ContactDateTime_AEST,
+  lh.NewValue,
   CASE
-        WHEN CONVERT(VARCHAR(8), lh.ContactDateTime_AEST, 108) BETWEEN '09:00:00' AND '19:00:00'
+    WHEN CONVERT(VARCHAR(8), lh.ContactDateTime_AEST, 108) BETWEEN '09:00:00' AND '19:00:00'
             THEN 1
         ELSE 0
     END AS ContactedWithinDay,
      DATEDIFF(MINUTE, CreatedDateTimeLeadReq_lr, ContactDateTime_AEST) AS MinutesDifference,
-     FORMAT(CreatedDateTimeLeadReq_lr, 'dddd') AS DayName
+  CASE 
+  	WHEN CAST(lh.ContactDateTime_AEST AS date) >= CAST(DATEADD(DAY, 1 - DAY(GETDATE()), GETDATE()) AS date)
+  			THEN 1
+  		ELSE 0
+  END as ContactedWithinMonth,
+  FORMAT(CreatedDateTimeLeadReq_lr, 'dddd') AS DayName
 FROM LeadRequestMod_dedupe lr
-LEFT JOIN FirstContactLeadsReq lh
+LEFT JOIN FirstContactLeadsReq_dedupe lh
   ON lr.LeadReqId_lr = lh.LeadRequestId AND
   lr.CreatedDateOnly = lh.ContactDate_AEST
   GROUP BY 
@@ -127,6 +161,8 @@ LEFT JOIN FirstContactLeadsReq lh
   lr.LeadReqId_lr,
   CreatedDateTimeLeadReq_lr,
   lr.CreatedDateOnly,
+  lr.YesterdaysContacts,
+  lr.MTDContacts,
   lr.FullName_lr,
   lr.FirstName_lr,
   lr.LastName_lr,
@@ -156,4 +192,7 @@ LEFT JOIN FirstContactLeadsReq lh
   lr.Coverage_lr,
   lh.ContactDate_AEST,
   lh.ContactDateTime_AEST,
+  lh.NewValue,
   lr.WithinTimeWindow
+  
+
