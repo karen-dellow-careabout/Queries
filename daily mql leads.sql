@@ -60,7 +60,7 @@ END AS MTDContacts,
   
 )
 
---,LeadRequestMod_dedupe as (
+LeadRequestMod_dedupe as (
 select
     Object_lr,
     LeadReqId_lr,
@@ -98,3 +98,100 @@ select
    WithinTimeWindow
 FROM LeadRequestMod
 WHERE seq = 1
+
+,FirstContactLeadsReq AS (
+  SELECT LeadId as LeadRequestId,
+    CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS datetime) AS ContactDateTime_AEST,
+    CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS date) AS ContactDate_AEST,
+    NewValue,
+   ROW_NUMBER() OVER (PARTITION BY LeadId,CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS date)  ORDER BY CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS date) asc) AS seq
+  FROM [careabout-db].dbo.LeadHistory 
+  WHERE Field = 'Status' AND NewValue in ('Contacted x1','Qualified')
+  
+  
+UNION ALL
+
+  SELECT ParentId as LeadRequestId,
+    CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS datetime) AS ContactDateTime_AEST,
+    CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS date) AS ContactDate_AEST,
+    NewValue,
+    ROW_NUMBER() OVER (PARTITION BY ParentId, CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS date)  ORDER BY CAST(CreatedDate AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS date) asc) AS seq
+  FROM [careabout-db].dbo.RequestHistory
+  WHERE Field = 'Request_Status__c' AND NewValue IN ('Closed - Actioned') 
+)
+
+,FirstContactLeadsReq_dedupe as (
+select
+LeadRequestId,
+ContactDateTime_AEST,
+ContactDate_AEST,
+NewValue
+from 
+FirstContactLeadsReq
+where seq =1
+)
+
+
+SELECT 
+  lr.*,
+  lh.ContactDate_AEST AS FirstContactDate,
+  lh.ContactDateTime_AEST,
+  lh.NewValue,
+  CASE
+    WHEN CONVERT(VARCHAR(8), lh.ContactDateTime_AEST, 108) BETWEEN '09:00:00' AND '19:00:00' and NewValue in ('Contacted x1','Closed - Actioned')
+            THEN 1
+        ELSE 0
+    END AS ContactedWithinDay,
+     DATEDIFF(MINUTE, CreatedDateTimeLeadReq_lr, ContactDateTime_AEST) AS MinutesDifference,
+  CASE 
+  	WHEN CAST(lh.ContactDateTime_AEST AS date) >= CAST(DATEADD(DAY, 1 - DAY(GETDATE()), GETDATE()) AS date) and CAST(lh.ContactDateTime_AEST AS date) < CAST(DATEADD(DAY, 1 - DAY(GETDATE()), GETDATE()) AS date)
+  			THEN 1
+  		ELSE 0
+  END as ContactedWithinMonth,
+  FORMAT(CreatedDateTimeLeadReq_lr, 'dddd') AS DayName
+FROM LeadRequestMod_dedupe lr
+LEFT JOIN FirstContactLeadsReq_dedupe lh
+  ON lr.LeadReqId_lr = lh.LeadRequestId AND
+  lr.CreatedDateOnly = lh.ContactDate_AEST
+  WHERE NewValue IS NULL
+  GROUP BY 
+  lr.Object_lr,
+  lr.LeadReqId_lr,
+  CreatedDateTimeLeadReq_lr,
+  lr.CreatedDateOnly,
+  lr.YesterdaysContacts,
+  lr.MTDContacts,
+  lr.FullName_lr,
+  lr.FirstName_lr,
+  lr.LastName_lr,
+  lr.Email_lr,
+  lr.CompanyName_lr,
+  lr.LeadType_lr,
+  lr.LeadSource_lr,
+  lr.CustomerPostalCode_lr,
+  lr.CustomerCitySuburb_lr,
+  lr.ProductInterest_lr,
+  lr.CampaignName_lr,
+  lr.HcpLevel_lr,
+  lr.HcAssessmentStage_lr,
+  lr.Status_lr,
+  lr.WhoNeedsHelp_lr, 
+  lr.GaConnectorLastClickCampaign_lr,
+  lr.GaConnectorLastClickSource_lr,
+  lr.GaConnectorLastClickLandingPage_lr,
+  lr.GaConnectorLastClickChannel_lr,
+  lr.GaConnectorFirstClickChannel_lr,
+  lr.GaConnectorFirstClickMedium_lr,
+  lr.GaConnectorFirstClickSource_lr,
+  lr.MarketingCampaign_lr,
+  lr.MarketingChannel_lr,
+  lr.ClickSource_lr,
+  lr.AllTrafficSources_lr,
+  lr.Coverage_lr,
+  lh.ContactDate_AEST,
+  lh.ContactDateTime_AEST,
+  lh.NewValue,
+  lr.WithinTimeWindow
+  
+
+
