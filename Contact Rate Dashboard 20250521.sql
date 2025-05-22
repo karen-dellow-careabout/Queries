@@ -61,7 +61,7 @@ END AS MTDContacts,
         AND LastName_lr != 'test'
         AND FirstName_lr != 'test'
         AND ((Email_lr NOT LIKE '%\@careabout%' AND Email_lr NOT LIKE '%\@test%') OR Email_lr IS NULL)
-         and CAST(CreatedDateTimeLeadReq_lr AS date)  >= '2025-05-01'
+        
 ),
 
 FirstContactLeadsReq AS (
