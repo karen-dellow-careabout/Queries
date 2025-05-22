@@ -101,7 +101,19 @@ SELECT
     lr.*,
 
     CASE
-    WHEN CONVERT(VARCHAR(8), CreatedDateTimeLeadReq_lr, 108) BETWEEN '09:00:00' AND '19:00:00' and Status_lr in ('Qualified','Do not call','Closed - Actioned')
+    WHEN DATENAME(WEEKDAY, CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS DATE)) = 'Monday'
+         AND CAST(CreatedDateTimeLeadReq_lr AS date) IN (
+             CAST(DATEADD(DAY, -2, CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS DATE)) AS date),
+             CAST(DATEADD(DAY, -1, CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS DATE)) AS date)
+         )
+         AND CONVERT(VARCHAR(8), CreatedDateTimeLeadReq_lr, 108) BETWEEN '09:00:00' 
+         AND '19:00:00' and Status_lr in ('Qualified','Do not call','Closed - Actioned')
+    THEN 1
+    WHEN DATENAME(WEEKDAY, CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS DATE)) != 'Monday'
+         AND CAST(CreatedDateTimeLeadReq_lr AS date) = 
+             CAST(DATEADD(DAY, -1, CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'UTC' AT TIME ZONE 'AUS Eastern Standard Time' AS DATE)) AS date)
+    AND CONVERT(VARCHAR(8), CreatedDateTimeLeadReq_lr, 108) BETWEEN '09:00:00' AND '19:00:00' 
+    and Status_lr in ('Qualified','Do not call','Closed - Actioned')
             THEN 1
         ELSE 0
     END AS ContactedWithinDay,
